@@ -1,0 +1,57 @@
+id: detect_taintwire_css_injection_url
+name: "CSS injection: URL or window.name value reaches a style sink (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from a URL read (location.hash/search/href,
+    document.URL/documentURI/referrer/baseURI) or window.name into element.style.<property>,
+    element.style, CSSStyleDeclaration.setProperty(), CSSStyleSheet.insertRule() or
+    replaceSync(). Attacker CSS can exfiltrate attribute values with selectors and url(), or
+    overlay the UI. style.cssText is reported by detect_taintwire_dom_xss_url.
+severity: low
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b|\bwindow\s*\.\s*name\b'
+
+steps:
+    - name: url_source
+      message: "URL or window.name value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE o.name = 'window' AND p.name = 'name'
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: css_sink
+      message: "URL-derived value reaches a style sink"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n), (l)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(st:Identifier)
+                  WHERE st.name = 'style' AND p.name <> 'cssText' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n)
+                  WHERE p.name IN ['style'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['setProperty'] AND a.idx = 1 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['insertRule', 'replaceSync'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

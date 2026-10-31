@@ -1,0 +1,72 @@
+id: detect_taintwire_insecure_randomness
+name: "Insecure randomness: Math.random() value stored as a cookie, in web storage or sent as a request header (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from Math.random() into document.cookie, localStorage/sessionStorage.setItem()
+    or a request header (setRequestHeader, headers: {...}, new Headers, x.headers.X =).
+    Math.random() is predictable, so a session id, CSRF token or nonce generated with it can
+    be guessed. Use crypto.getRandomValues() or crypto.randomUUID().
+severity: low
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\bMath\s*\.\s*random\b'
+
+steps:
+    - name: random_source
+      message: "Math.random() value generated"
+      taintwire:
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (cm)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE p.name = 'random' AND o.name = 'Math'
+                  RETURN c.id AS id, 'Math.random' AS kind, c.file AS file, c.line AS line, c.col AS col
+              - |-
+                  MATCH (w)-[e:SON*1..8 (r, _ | WHERE r.key IN ['object', 'callee'])]->(c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (cm)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE p.name = 'random' AND o.name = 'Math'
+                  RETURN DISTINCT w.id AS id, 'Math.random chain' AS kind, w.file AS file, w.line AS line, w.col AS col
+    - name: token_sink
+      message: "Math.random()-derived value stored or sent as a token"
+      taintwire:
+          taintFrom: random_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (l)-[:SON {key: 'object'}]->(o:Identifier), (a)-[:SON {key: 'right'}]->(n)
+                  WHERE p.name = 'cookie' AND o.name = 'document' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'cookie' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o)
+                  WHERE p.name = 'setItem' AND a.idx = 1 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                    AND (o.name IN ['localStorage', 'sessionStorage'] OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name IN ['localStorage', 'sessionStorage'] })
+                  RETURN n.id AS id, 'setItem' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['setRequestHeader'] AND a.idx IN [0, 1] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (hp:ObjectProperty)-[:SON {key: 'key'}]->(hk:Identifier), (hp)-[:SON {key: 'value'}]->(:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[s:SON]->(n)
+                  WHERE hk.name = 'headers' AND (s.key = 'value' OR (s.key = 'key' AND op.props CONTAINS '"computed":true')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'headers:' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (oe:ObjectExpression)-[:FLOWS_TO* ACYCLIC 1..4]->(hv)<-[:SON {key: 'value'}]-(hp:ObjectProperty)-[:SON {key: 'key'}]->(hk:Identifier), (oe)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[s:SON]->(n)
+                  WHERE hk.name = 'headers' AND (s.key = 'value' OR (s.key = 'key' AND op.props CONTAINS '"computed":true')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'headers:' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[:SON {key: 'value'}]->(n)
+                  WHERE f.name = 'Headers' AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'new Headers' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n), (l)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(h:Identifier)
+                  WHERE h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(h:Identifier)
+                  WHERE p.name IN ['set', 'append'] AND a.idx IN [0, 1] AND h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

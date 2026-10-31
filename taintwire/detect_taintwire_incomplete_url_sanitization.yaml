@@ -1,0 +1,60 @@
+id: detect_taintwire_incomplete_url_sanitization
+name: "Incomplete URL sanitization: URL value checked with a substring/prefix/suffix test on a hostname (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from a URL read (location.hash/search/href,
+    document.URL/documentURI/referrer/baseURI) or window.name into the receiver of
+    .includes()/.indexOf()/.startsWith()/.endsWith() against a hostname literal with no
+    boundary: includes('example.com') or startsWith('https://example.com') without a trailing
+    '/', and endsWith('example.com') without a leading '.'. These checks pass for attacker
+    hosts such as example.com.attacker.net or attackerexample.com, so a redirect or origin
+    allowlist built on them can be bypassed. Parse with new URL() and compare origin or
+    hostname exactly.
+severity: low
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b|\bwindow\s*\.\s*name\b'
+
+steps:
+    - name: url_source
+      message: "URL or window.name value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE o.name = 'window' AND p.name = 'name'
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: check_sink
+      message: "URL-derived value checked against a hostname by substring"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(t:StringLiteral), (cm)-[:SON {key: 'object'}]->(n)
+                  WHERE a.idx = 0 AND (t.value IS NOT NULL AND (
+                       (p.name IN ['includes', 'indexOf'] AND t.value =~ '[.]?(https?://)?[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,24}')
+                    OR (p.name = 'startsWith' AND t.value =~ 'https?://[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,24}')
+                    OR (p.name = 'endsWith' AND t.value =~ '[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,24}'))
+                    AND NOT t.value =~ '.*[.](js|mjs|cjs|json|html?|css|png|jpe?g|gif|svg|webp|avif|ico|txt|xml|map|woff2?|ttf|otf|eot|pdf|php|aspx?|jsp|md|mp[34]|webm|wasm|zip|gz)')
+                  RETURN n.id AS id, p.name + '(host)' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(t:TemplateLiteral)-[:SON {key: 'quasis'}]->(tq:TemplateElement), (cm)-[:SON {key: 'object'}]->(n)
+                  WHERE a.idx = 0 AND (tq.value IS NOT NULL AND t.props CONTAINS '"expressions":[]' AND (
+                       (p.name IN ['includes', 'indexOf'] AND tq.value =~ '[.]?(https?://)?[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,24}')
+                    OR (p.name = 'startsWith' AND tq.value =~ 'https?://[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,24}')
+                    OR (p.name = 'endsWith' AND tq.value =~ '[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z]{2,24}'))
+                    AND NOT tq.value =~ '.*[.](js|mjs|cjs|json|html?|css|png|jpe?g|gif|svg|webp|avif|ico|txt|xml|map|woff2?|ttf|otf|eot|pdf|php|aspx?|jsp|md|mp[34]|webm|wasm|zip|gz)')
+                  RETURN n.id AS id, p.name + '(host)' AS kind, n.file AS file, n.line AS line, n.col AS col

@@ -1,0 +1,54 @@
+id: detect_taintwire_template_injection_url
+name: "Client-side template injection: URL or window.name value compiled as a template (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from a URL read (location.hash/search/href,
+    document.URL/documentURI/referrer/baseURI) or window.name into a client-side template
+    compiler or expression evaluator: lodash/underscore _.template(), Handlebars/Vue
+    .compile()/.precompile(), AngularJS $compile/$interpolate/$parse and
+    scope.$eval/$evalAsync/$apply/$watch with a string, or a runtime-compiled component's
+    template: option. Compiled templates run arbitrary JavaScript.
+severity: high
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b|\bwindow\s*\.\s*name\b'
+
+steps:
+    - name: url_source
+      message: "URL or window.name value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE o.name = 'window' AND p.name = 'name'
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: template_sink
+      message: "URL-derived value compiled as a template or expression"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['template', 'compile', 'precompile', '$compile', '$interpolate', '$parse', '$eval', '$evalAsync', '$apply', '$watch'] AND a.idx = 0 AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE f.name IN ['$compile', '$interpolate', '$parse'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (o:ObjectProperty)-[:SON {key: 'key'}]->(k:Identifier), (o)-[:SON {key: 'value'}]->(n)
+                  WHERE k.name = 'template' AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'template:' AS kind, n.file AS file, n.line AS line, n.col AS col

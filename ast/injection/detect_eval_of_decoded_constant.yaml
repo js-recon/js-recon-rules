@@ -1,0 +1,25 @@
+id: detect_eval_of_decoded_constant
+name: "Encoded constant decoded and executed (obfuscated code)"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects eval(), Function()/new Function(), or a string setTimeout/setInterval whose
+    argument is atob(), unescape(), decodeURIComponent() or String.fromCharCode() of a
+    constant. Legitimate code rarely ships base64 or char-code encoded source and runs it;
+    this is a common shape for injected skimmers, malicious packages and obfuscated
+    third-party scripts. Review where the chunk comes from.
+severity: medium
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_decoded_exec
+      message: "Decoded constant passed to eval/Function/timer"
+      esquery:
+          type: esquery
+          query: ':matches(CallExpression, NewExpression)[callee.name=/^(eval|Function|setTimeout|setInterval)$/] > CallExpression.arguments:matches([callee.name=/^(atob|unescape|decodeURIComponent|escape)$/], [callee.object.name="String"][callee.property.name="fromCharCode"]):has(> :matches(StringLiteral, NumericLiteral, TemplateLiteral[expressions.length=0], SpreadElement))'

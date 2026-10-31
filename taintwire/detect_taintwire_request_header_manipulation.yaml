@@ -1,0 +1,62 @@
+id: detect_taintwire_request_header_manipulation
+name: "Ajax request-header manipulation: URL value reaches a request header (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from a URL read (location.hash/search/href,
+    document.URL/documentURI/referrer/baseURI) into an HTTP request header name or value:
+    XMLHttpRequest.setRequestHeader(), a value in a headers: {...} object (fetch/axios
+    options), new Headers({...}), x.headers[k] = v / x.headers.Name = v (axios interceptors),
+    or x.headers.set()/append(). An attacker-chosen header can switch content types, override
+    methods, or inject tokens.
+severity: medium
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b'
+
+steps:
+    - name: url_source
+      message: "URL value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: header_sink
+      message: "URL-derived value reaches a request header"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['setRequestHeader'] AND a.idx IN [0, 1] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (hp:ObjectProperty)-[:SON {key: 'key'}]->(hk:Identifier), (hp)-[:SON {key: 'value'}]->(:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[s:SON]->(n)
+                  WHERE hk.name = 'headers' AND (s.key = 'value' OR (s.key = 'key' AND op.props CONTAINS '"computed":true')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'headers:' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (oe:ObjectExpression)-[:FLOWS_TO* ACYCLIC 1..4]->(hv)<-[:SON {key: 'value'}]-(hp:ObjectProperty)-[:SON {key: 'key'}]->(hk:Identifier), (oe)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[s:SON]->(n)
+                  WHERE hk.name = 'headers' AND (s.key = 'value' OR (s.key = 'key' AND op.props CONTAINS '"computed":true')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'headers:' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[:SON {key: 'value'}]->(n)
+                  WHERE f.name = 'Headers' AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'new Headers' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n), (l)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(h:Identifier)
+                  WHERE h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(h:Identifier)
+                  WHERE p.name IN ['set', 'append'] AND a.idx IN [0, 1] AND h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

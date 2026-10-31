@@ -1,0 +1,24 @@
+id: detect_document_domain_assignment
+name: "document.domain assignment (same-origin policy relaxed)"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects any assignment to document.domain. Setting it lets pages on sibling subdomains
+    that set the same value script this page, so a compromise of any subdomain becomes a
+    compromise of this one. Browsers are removing the feature (origin-keyed agent clusters);
+    use postMessage for cross-subdomain communication.
+severity: low
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_document_domain_write
+      message: "document.domain assigned"
+      esquery:
+          type: esquery
+          query: 'AssignmentExpression[left.type="MemberExpression"][left.object.name="document"][left.property.name="domain"]'

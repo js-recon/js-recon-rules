@@ -1,0 +1,23 @@
+id: detect_cleartext_websocket
+name: "WebSocket opened over cleartext ws://"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects new WebSocket() with a ws:// URL constant to a non-local host. Traffic over ws://
+    is unencrypted and unauthenticated, so a network attacker can read and modify messages
+    (often session tokens or user data). Use wss://.
+severity: low
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_ws_url
+      message: "WebSocket URL uses ws://"
+      esquery:
+          type: esquery
+          query: "NewExpression[callee.name=\"WebSocket\"]:matches([arguments.0.value=/^ws:\\/\\/(?!(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0)([:/]|$))/i], [arguments.0.quasis.0.value.cooked=/^ws:\\/\\/(?!(localhost|127\\.0\\.0\\.1|\\[::1\\]|0\\.0\\.0\\.0)([:/]|$))/i][arguments.0.expressions.length=0])"
