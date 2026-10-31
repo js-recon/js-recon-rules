@@ -1,7 +1,7 @@
 id: detect_taintwire_postmessage_flow
 name: "postMessage data reaches an HTML, JS execution or navigation sink (taintwire)"
 author: shriyanss
-js_recon_version: ">=2.1.0"
+js_recon_version: ">=2.1.0-alpha.2"
 description: >-
     Taint flow from the data of a message event (the first parameter's .data in an
     addEventListener('message', h) or onmessage = h listener, h inline or a named

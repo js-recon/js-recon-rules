@@ -1,7 +1,7 @@
 id: detect_taintwire_dom_xss_url
 name: "DOM XSS: URL or window.name value reaches an HTML sink (taintwire)"
 author: shriyanss
-js_recon_version: ">=2.1.0"
+js_recon_version: ">=2.1.0-alpha.2"
 description: >-
     Taint flow from a URL read (location.hash/search/href,
     document.URL/documentURI/referrer/baseURI) or window.name into an HTML sink:

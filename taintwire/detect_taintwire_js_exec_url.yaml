@@ -1,7 +1,7 @@
 id: detect_taintwire_js_exec_url
 name: "JS execution: URL or window.name value reaches eval/Function/string timer (taintwire)"
 author: shriyanss
-js_recon_version: ">=2.1.0"
+js_recon_version: ">=2.1.0-alpha.2"
 description: >-
     Taint flow from a URL read (location.hash/search/href,
     document.URL/documentURI/referrer/baseURI) or window.name into eval(), Function()/new
