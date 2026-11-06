@@ -45,7 +45,7 @@ jobs:
           commit-email: ${{ secrets.JS_RECON_SIGNING_EMAIL }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3.9.1
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
@@ -82,7 +82,7 @@ jobs:
           path: js-recon
 
       - name: Set up Node.js
-        uses: actions/setup-node@3235b876344d2a9aa001b8d1453c930bba69e610 # v3.9.1
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
