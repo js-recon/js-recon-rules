@@ -1,0 +1,31 @@
+id: detect_angularjs_sce_disabled
+name: "AngularJS Strict Contextual Escaping (SCE) disabled"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects $sceProvider.enabled(false) in an AngularJS application: an .enabled(false) call
+    inside the config function (or its DI annotation array) that injects $sceProvider. With
+    SCE off, ng-bind-html and other bindings render untrusted values without sanitization.
+severity: medium
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_sce_provider
+      message: "$sceProvider injected"
+      esquery:
+          type: esquery
+          query: ':matches(ArrayExpression:has(> StringLiteral[value="$sceProvider"]), ArrayExpression:has(> TemplateLiteral[expressions.length=0][quasis.0.value.cooked="$sceProvider"]), :function:has(> Identifier.params[name="$sceProvider"]))'
+    - name: find_sce_disabled
+      message: "SCE disabled with .enabled(false)"
+      requires:
+          - find_sce_provider
+      esquery:
+          type: esquery
+          inScopeOf: find_sce_provider
+          query: 'CallExpression[callee.property.name="enabled"][arguments.length=1]:matches([arguments.0.value=false], [arguments.0.operator="!"][arguments.0.argument.value=1])'

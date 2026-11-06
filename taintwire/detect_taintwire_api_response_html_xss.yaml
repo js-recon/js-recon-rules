@@ -1,0 +1,99 @@
+id: detect_taintwire_api_response_html_xss
+name: "Stored XSS: HTTP response data reaches an HTML or JavaScript execution sink (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from an HTTP response body (await response.json() / response.text(),
+    XMLHttpRequest.responseText/responseXML) into an HTML sink (innerHTML/outerHTML/srcdoc,
+    document.write, insertAdjacentHTML, jQuery .html()/$(), dangerouslySetInnerHTML, v-html,
+    DOMParser, Angular bypassSecurityTrust*) or a JavaScript execution sink. If the API
+    returns user-supplied content (comments, profiles, messages), this is stored XSS. Values
+    passed through promise .then() callbacks or framework state are not followed; await is.
+severity: medium
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\.(?:json|text)\(\)|\bresponseText\b|\bresponseXML\b'
+
+steps:
+    - name: response_source
+      message: "HTTP response body read (response.json()/.text(), xhr.responseText)"
+      taintwire:
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier)
+                  WHERE p.name IN ['json', 'text'] AND NOT EXISTS { MATCH (c)-[:SON {key: 'arguments'}]->() }
+                  RETURN c.id AS id, p.name AS kind, c.file AS file, c.line AS line, c.col AS col
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier)
+                  WHERE p.name IN ['responseText', 'responseXML'] AND NOT EXISTS { MATCH (asg)-[s:SON]->(n) WHERE s.key = 'left' AND asg.type = 'AssignmentExpression' }
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: response_sink
+      message: "response data reaches an HTML or JavaScript execution sink"
+      taintwire:
+          taintFrom: response_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (a)-[:SON {key: 'right'}]->(n)
+                  WHERE p.name IN ['innerHTML', 'outerHTML', 'srcdoc', 'cssText'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o)
+                  WHERE ((p.name IN ['write', 'writeln'] AND o.name = 'document' AND a.idx = 0)
+                     OR (p.name = 'insertAdjacentHTML' AND a.idx = 1)
+                     OR (p.name IN ['html', 'createContextualFragment', 'setHTMLUnsafe'] AND a.idx = 0)) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (o:ObjectProperty)-[:SON {key: 'key'}]->(k:Identifier), (o)-[:SON {key: 'value'}]->(n)
+                  WHERE k.name IN ['__html', 'innerHTML', 'outerHTML'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, k.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (o:ObjectProperty)-[:SON {key: 'key'}]->(k:StringLiteral), (o)-[:SON {key: 'value'}]->(n)
+                  WHERE k.value IN ['__html', 'innerHTML', 'outerHTML'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, k.value AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[a0:SON {key: 'arguments'}]->(k:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE a1.idx = a0.idx + 1 AND k.value IN ['innerHTML', 'outerHTML', 'srcdoc'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'property-call' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[a0:SON {key: 'arguments'}]->(k:TemplateLiteral)-[:SON {key: 'quasis'}]->(kq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE a1.idx = a0.idx + 1 AND kq.value IN ['innerHTML', 'outerHTML', 'srcdoc'] AND k.props CONTAINS '"expressions":[]' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'property-call' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE f.name IN ['$', 'jQuery'] AND a.idx = 0 AND NOT EXISTS { MATCH (f)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['wrap', 'wrapAll', 'wrapInner', 'parseHTML', 'parseFromString', 'parseHTMLUnsafe'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['bypassSecurityTrustHtml', 'bypassSecurityTrustScript', 'bypassSecurityTrustStyle', 'bypassSecurityTrustUrl', 'bypassSecurityTrustResourceUrl'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['execCommand'] AND a0.idx = 0 AND a1.idx = 2 AND k.value IN ['insertHTML'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:TemplateLiteral)-[:SON {key: 'quasis'}]->(kq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['execCommand'] AND a0.idx = 0 AND a1.idx = 2 AND kq.value IN ['insertHTML'] AND k.props CONTAINS '"expressions":[]' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE ((f.name IN ['eval', 'setTimeout', 'setInterval'] AND a.idx = 0) OR f.name = 'Function') AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE ((f.name IN ['eval', 'setTimeout', 'setInterval'] AND a.idx = 0) OR f.name = 'Function') AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['eval', 'setTimeout', 'setInterval'] AND a.idx = 0 AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

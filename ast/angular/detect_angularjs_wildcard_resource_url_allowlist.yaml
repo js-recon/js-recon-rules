@@ -1,0 +1,25 @@
+id: detect_angularjs_wildcard_resource_url_allowlist
+name: "AngularJS resource URL allowlist with a wildcard"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects $sceDelegateProvider.resourceUrlWhitelist / trustedResourceUrlList (and the
+    matching banned lists) given '**' or a pattern whose scheme or host is a wildcard (for
+    example 'http*://**', '*://**', 'https://**'). Any matching URL is then trusted for
+    ng-include, templateUrl and iframe sources, which lets an attacker load their own
+    templates.
+severity: medium
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_wildcard_allowlist
+      message: "Resource URL allowlist contains a wildcard host or scheme"
+      esquery:
+          type: esquery
+          query: "CallExpression[callee.property.name=/^(resourceUrlWhitelist|trustedResourceUrlList)$/] ArrayExpression > :matches(StringLiteral[value=/^(\\*\\*|[a-z*]*\\*[a-z*]*:\\/\\/\\*\\*.*|https?:\\/\\/\\*\\*.*)$/], TemplateLiteral[expressions.length=0][quasis.0.value.cooked=/^(\\*\\*|[a-z*]*\\*[a-z*]*:\\/\\/\\*\\*.*|https?:\\/\\/\\*\\*.*)$/])"

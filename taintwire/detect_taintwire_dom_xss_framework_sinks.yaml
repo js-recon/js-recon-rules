@@ -1,0 +1,63 @@
+id: detect_taintwire_dom_xss_framework_sinks
+name: "DOM XSS: URL or window.name value reaches a jQuery, Angular trust or HTML parser sink (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from a URL read (location.hash/search/href,
+    document.URL/documentURI/referrer/baseURI) or window.name into a sink that parses or
+    trusts HTML: a jQuery $()/jQuery() selector call, .wrap()/.wrapAll()/.wrapInner(),
+    $.parseHTML, DOMParser.parseFromString, Document.parseHTMLUnsafe,
+    document.execCommand('insertHTML', ...), or an Angular DomSanitizer bypassSecurityTrust*
+    call. Complements detect_taintwire_dom_xss_url, which covers the DOM property and method
+    sinks.
+severity: high
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b|\bwindow\s*\.\s*name\b'
+
+steps:
+    - name: url_source
+      message: "URL or window.name value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE o.name = 'window' AND p.name = 'name'
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: html_sink
+      message: "URL-derived value reaches an HTML-parsing or trust sink"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE f.name IN ['$', 'jQuery'] AND a.idx = 0 AND NOT EXISTS { MATCH (f)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['wrap', 'wrapAll', 'wrapInner', 'parseHTML', 'parseFromString', 'parseHTMLUnsafe'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['bypassSecurityTrustHtml', 'bypassSecurityTrustScript', 'bypassSecurityTrustStyle', 'bypassSecurityTrustUrl', 'bypassSecurityTrustResourceUrl'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['execCommand'] AND a0.idx = 0 AND a1.idx = 2 AND k.value IN ['insertHTML'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:TemplateLiteral)-[:SON {key: 'quasis'}]->(kq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['execCommand'] AND a0.idx = 0 AND a1.idx = 2 AND kq.value IN ['insertHTML'] AND k.props CONTAINS '"expressions":[]' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

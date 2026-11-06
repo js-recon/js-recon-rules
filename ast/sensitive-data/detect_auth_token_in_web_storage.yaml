@@ -1,0 +1,25 @@
+id: detect_auth_token_in_web_storage
+name: "Authentication token stored in localStorage/sessionStorage"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects localStorage/sessionStorage.setItem() with a key that names an access, refresh,
+    ID, auth or session token, JWT, API key or secret. Web storage is readable by every script
+    on the origin, so any XSS (including in a third-party script) can steal the token; an
+    HttpOnly cookie is not exposed that way. Inventory finding: decide whether the token's
+    lifetime and scope justify it.
+severity: info
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_token_setitem
+      message: "Token-like key written to web storage"
+      esquery:
+          type: esquery
+          query: 'CallExpression[callee.property.name="setItem"]:matches([callee.object.name=/^(localStorage|sessionStorage)$/], [callee.object.property.name=/^(localStorage|sessionStorage)$/]):matches([arguments.0.value=/(access|refresh|id|auth|session|bearer|api)[-_.]?(token|key)|^(token|jwt|auth|secret|credentials?)$|jwt|secret/i], [arguments.0.quasis.0.value.cooked=/(access|refresh|id|auth|session|bearer|api)[-_.]?(token|key)|^(token|jwt|auth|secret|credentials?)$|jwt|secret/i][arguments.0.expressions.length=0])'

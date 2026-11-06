@@ -1,0 +1,25 @@
+id: detect_dompurify_unsafe_config
+name: "DOMPurify configured to allow script-capable markup"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects a DOMPurify configuration object that re-enables what the sanitizer exists to
+    remove: ALLOW_UNKNOWN_PROTOCOLS: true (javascript: and other schemes survive), ADD_TAGS
+    containing script/iframe/object/embed/base/meta/style/svg/math, or ADD_ATTR containing an
+    on* event handler, srcdoc, formaction or xlink:href. Sanitized output from such a config
+    can still run script.
+severity: medium
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_unsafe_config
+      message: "DOMPurify config option allows script-capable markup"
+      esquery:
+          type: esquery
+          query: ':matches(ObjectProperty[key.name="ALLOW_UNKNOWN_PROTOCOLS"] > BooleanLiteral.value[value=true], ObjectProperty[key.name="ALLOW_UNKNOWN_PROTOCOLS"] > UnaryExpression.value[operator="!"][argument.value=0], ObjectProperty[key.name="ADD_TAGS"] > ArrayExpression > StringLiteral[value=/^(script|iframe|object|embed|base|meta|style|svg|math)$/i], ObjectProperty[key.name="ADD_TAGS"] > ArrayExpression > TemplateLiteral[expressions.length=0][quasis.0.value.cooked=/^(script|iframe|object|embed|base|meta|style|svg|math)$/i], ObjectProperty[key.name="ADD_ATTR"] > ArrayExpression > StringLiteral[value=/^(on[a-z]+|srcdoc|formaction|xlink:href)$/i], ObjectProperty[key.name="ADD_ATTR"] > ArrayExpression > TemplateLiteral[expressions.length=0][quasis.0.value.cooked=/^(on[a-z]+|srcdoc|formaction|xlink:href)$/i])'

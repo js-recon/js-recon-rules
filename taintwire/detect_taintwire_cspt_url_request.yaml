@@ -1,0 +1,50 @@
+id: detect_taintwire_cspt_url_request
+name: "Client-side path traversal: URL value reaches a request URL (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from a URL read (location.hash/search/href,
+    document.URL/documentURI/referrer/baseURI) into the URL of a request: fetch, $fetch, axios
+    and axios.get/post/..., window.fetch, XMLHttpRequest.open, new WebSocket or new
+    EventSource. Review whether the value can change the request path.
+severity: medium
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b'
+
+steps:
+    - name: url_source
+      message: "URL value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: request_sink
+      message: "URL-derived value reaches a request URL"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE a.idx = 0 AND f.name IN ['fetch', '$fetch', 'axios'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o)
+                  WHERE ((a.idx = 0 AND p.name = 'fetch' AND o.name IN ['window', 'globalThis', 'self'])
+                      OR (a.idx = 0 AND o.name = 'axios' AND p.name IN ['get', 'post', 'put', 'delete', 'patch', 'request'])
+                      OR (a.idx = 1 AND p.name = 'open' AND (o.name IS NULL OR NOT o.name IN ['window', 'document']))) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE a.idx = 0 AND f.name IN ['WebSocket', 'EventSource'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col

@@ -1,0 +1,25 @@
+id: detect_weak_crypto_algorithm
+name: "Broken or weak cryptographic algorithm used in the browser"
+author: shriyanss
+js_recon_version: ">=1.4.1-alpha.4"
+description: >-
+    Detects MD5, SHA-1, MD4, DES, Triple DES, RC4 or Rabbit used through CryptoJS-style
+    libraries, the Web Crypto API (crypto.subtle.digest/importKey with SHA-1) or a Node crypto
+    polyfill (createHash('md5'|'sha1')), and the ECB block mode. These are fine for
+    non-security checksums but broken for signatures, password hashing, integrity checks or
+    encryption; review what the result protects.
+severity: low
+type: ast
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+
+steps:
+    - name: find_weak_algorithm
+      message: "Weak or broken cryptographic primitive used"
+      esquery:
+          type: esquery
+          query: ':matches(CallExpression[callee.property.name=/^(MD5|MD4|SHA1|HmacMD5|HmacSHA1|RC4|RC4Drop|Rabbit|RabbitLegacy)$/], CallExpression[callee.property.name=/^(encrypt|decrypt)$/][callee.object.property.name=/^(DES|TripleDES|RC4|RC4Drop|Rabbit)$/], CallExpression[callee.property.name=/^(digest|importKey|sign)$/]:matches([arguments.0.value=/^SHA-?1$/i], [arguments.0.quasis.0.value.cooked=/^SHA-?1$/i][arguments.0.expressions.length=0]), CallExpression[callee.property.name=/^(createHash|createHmac)$/]:matches([arguments.0.value=/^(md4|md5|sha1)$/i], [arguments.0.quasis.0.value.cooked=/^(md4|md5|sha1)$/i][arguments.0.expressions.length=0]), MemberExpression[property.name="ECB"][object.property.name="mode"])'

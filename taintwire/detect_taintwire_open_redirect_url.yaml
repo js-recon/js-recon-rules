@@ -1,0 +1,61 @@
+id: detect_taintwire_open_redirect_url
+name: "Open redirect: URL value reaches a navigation sink (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from location.hash/search or document.URL/documentURI/referrer/baseURI into a
+    navigation sink: location assignment, x.location/x.href assignment,
+    location.assign/replace, window.open, or setAttribute of
+    href/src/action/formaction/srcdoc. location.href is not a source here: frameworks and
+    libraries routinely navigate with the current URL.
+severity: medium
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b'
+
+steps:
+    - name: url_source
+      message: "URL value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: navigate_sink
+      message: "URL-derived value reaches a navigation sink"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (a)-[:SON {key: 'right'}]->(n)
+                  WHERE l.name = 'location' AND NOT EXISTS { MATCH (l)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'location=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(:MemberExpression)-[:SON {key: 'property'}]->(q:Identifier), (a)-[:SON {key: 'right'}]->(n)
+                  WHERE q.name IN ['location', 'href'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, q.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o)
+                  WHERE a.idx = 0 AND ((p.name IN ['assign', 'replace'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' })) OR (p.name = 'open' AND o.name = 'window')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND k.value IN ['href', 'src', 'action', 'formaction', 'srcdoc'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'setAttribute' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:TemplateLiteral)-[:SON {key: 'quasis'}]->(kq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND kq.value IN ['href', 'src', 'action', 'formaction', 'srcdoc'] AND k.props CONTAINS '"expressions":[]' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'setAttribute' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k), (c)-[a1:SON {key: 'arguments'}]->(n)
+                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND NOT k.type IN ['StringLiteral', 'TemplateLiteral'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                  RETURN n.id AS id, 'setAttribute:dynamic' AS kind, n.file AS file, n.line AS line, n.col AS col

@@ -1,0 +1,62 @@
+id: detect_taintwire_cspt_extended_request
+name: "Client-side path traversal / request forgery: URL value reaches a request URL (jQuery, Beacon, Request, config objects) (taintwire)"
+author: shriyanss
+js_recon_version: ">=2.1.0-alpha.2"
+description: >-
+    Taint flow from location.hash/search or document.URL/documentURI/referrer/baseURI
+    (location.href is not a source here: frameworks and libraries routinely use the current
+    URL) into a request URL not covered by detect_taintwire_cspt_url_request: jQuery
+    $.ajax/$.get/$.post/$.getJSON/.load(), navigator.sendBeacon(), new Request(), or the
+    url/baseURL property of a request config object that also sets a request option such as
+    method, headers, data or params (axios({url, method}), $.ajax({url, dataType}),
+    axios.create({baseURL, headers})). Check whether the value can change the request path or
+    host.
+severity: medium
+type: taintwire
+tech:
+    - next
+    - vue
+    - react
+    - svelte
+    - angular
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b'
+
+steps:
+    - name: url_source
+      message: "URL value read"
+      taintwire:
+          query:
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
+                  WHERE (p.name IN ['hash', 'search'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                     OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+    - name: request_sink
+      message: "URL-derived value reaches a request URL"
+      taintwire:
+          taintFrom: url_source
+          mode: deep
+          maxHops: 8
+          query:
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE p.name IN ['ajax', 'get', 'post', 'getJSON', 'load'] AND a.idx = 0 AND o.name IN ['$', 'jQuery'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE p.name IN ['sendBeacon'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE f.name IN ['Request'] AND a.idx = 0 AND NOT EXISTS { MATCH (f)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:CallExpression)-[a:SON {key: 'arguments'}]->(oe:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[:SON {key: 'key'}]->(k:Identifier), (op)-[:SON {key: 'value'}]->(n),
+                        (oe)-[:SON {key: 'properties'}]->(:ObjectProperty)-[:SON {key: 'key'}]->(rk:Identifier)
+                  WHERE a.idx = 0 AND k.name IN ['url', 'baseURL'] AND rk.name IN ['method', 'success', 'headers', 'data', 'params', 'body', 'timeout', 'withCredentials', 'responseType', 'dataType', 'contentType', 'credentials'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, k.name + ':' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (c:NewExpression)-[a:SON {key: 'arguments'}]->(oe:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[:SON {key: 'key'}]->(k:Identifier), (op)-[:SON {key: 'value'}]->(n),
+                        (oe)-[:SON {key: 'properties'}]->(:ObjectProperty)-[:SON {key: 'key'}]->(rk:Identifier)
+                  WHERE a.idx = 0 AND k.name IN ['url', 'baseURL'] AND rk.name IN ['method', 'success', 'headers', 'data', 'params', 'body', 'timeout', 'withCredentials', 'responseType', 'dataType', 'contentType', 'credentials'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, k.name + ':' AS kind, n.file AS file, n.line AS line, n.col AS col
