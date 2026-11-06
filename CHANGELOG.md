@@ -1,9 +1,16 @@
 # CHANGELOG
 
-## Unreleased
+## 2.0.0 - 2026-11-06
+
+### Added
+
+- New rule type `taintwire` (`taintwire/`): 31 taint-flow rules that js-recon runs with `analyze --analyze-taintwire` (js-recon >=2.1.0-alpha.2). Each rule names a source query and a sink query over the [taintwire](https://taintwire.js-recon.io) graph and reports the sinks a source value reaches.
+    - `detect_taintwire_api_response_html_xss`, `detect_taintwire_cleartext_password_exposure`, `detect_taintwire_client_side_sql_injection`, `detect_taintwire_cspt_extended_request`, `detect_taintwire_cspt_url_request`, `detect_taintwire_css_injection_url`, `detect_taintwire_document_domain_manipulation`, `detect_taintwire_dom_clobbering_gadget`, `detect_taintwire_dom_data_manipulation`, `detect_taintwire_dom_xss_framework_sinks`, `detect_taintwire_dom_xss_url`, `detect_taintwire_incomplete_url_sanitization`, `detect_taintwire_insecure_randomness`, `detect_taintwire_js_exec_url`, `detect_taintwire_json_injection_url`, `detect_taintwire_link_manipulation_url`, `detect_taintwire_local_file_path_manipulation`, `detect_taintwire_open_redirect_location_parts`, `detect_taintwire_open_redirect_url`, `detect_taintwire_postmessage_extended_flow`, `detect_taintwire_postmessage_flow`, `detect_taintwire_prototype_pollution_url`, `detect_taintwire_regex_injection_url`, `detect_taintwire_request_header_manipulation`, `detect_taintwire_script_injection_url`, `detect_taintwire_storage_url`, `detect_taintwire_stored_dom_xss`, `detect_taintwire_template_injection_url`, `detect_taintwire_unsafe_dynamic_method_call`, `detect_taintwire_web_message_manipulation`, `detect_taintwire_xpath_injection`
+- 9 AST rules for classes that need no data flow: `detect_weak_crypto_algorithm`, `detect_dompurify_unsafe_config`, `detect_angularjs_sce_disabled`, `detect_angularjs_wildcard_resource_url_allowlist`, `detect_document_domain_assignment`, `detect_cleartext_websocket`, `detect_eval_of_decoded_constant`, `detect_window_open_without_noopener`, `detect_auth_token_in_web_storage`.
 
 ### Changed
 
+- The taintwire rules require js-recon >=2.1.0-alpha.2 (`js_recon_version`).
 - CI: enabled Dependabot version updates (`.github/dependabot.yml`) for the GitHub Actions ecosystem, opening weekly PRs against `dev`. Minor/patch bumps are grouped into a single PR; majors open individually for dedicated review.
 
 ## 1.5.0 - 2026-08-11
