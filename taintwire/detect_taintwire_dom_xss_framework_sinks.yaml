@@ -44,10 +44,10 @@ steps:
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE f.name IN ['$', 'jQuery'] AND a.idx = 0 AND NOT EXISTS { MATCH (f)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
-                    AND NOT (EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '[[:space:]]*[^<[:space:]].*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '[[:space:]]*[^<[:space:]].*' })
+                    AND NOT (EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '[[:space:]]*[^<[:space:]].*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '[[:space:]]*[^<[:space:]].*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '[[:space:]]*[^<[:space:]].*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '[[:space:]]*[^<[:space:]].*' })
                   RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)

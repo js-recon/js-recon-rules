@@ -7,8 +7,10 @@ description: >-
     addEventListener('message', h) or onmessage = h listener, h inline or a named
     function/const) into an HTML sink, a JavaScript execution sink (eval, Function, string
     timers) or a navigation sink (location assignment, href, location.assign/replace,
-    window.open, setAttribute of href/src/action/formaction/srcdoc). Does not check whether
-    the listener validates event.origin.
+    window.open, setAttribute of href/src/action/formaction/srcdoc). Listeners that compare
+    event.origin/event.source exactly (===, !==, allowlist.has(e.origin), /re/.test(e.origin))
+    and Worker message listeners are left out; a substring check such as e.origin.indexOf(...)
+    can be bypassed and still reports.
 severity: high
 type: taintwire
 tech:
@@ -46,20 +48,24 @@ steps:
       taintwire:
           query:
               - |-
-                  MATCH (f) WHERE f.id IN $handler AND f.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT (EXISTS { MATCH (f)-[:SON*1..30]->(zm)-[:SON {key: 'property'}]->(zp), (zb)-[zs:SON]->(zm)
-                  WHERE zm.type = 'MemberExpression' AND zp.name IN ['origin', 'source'] AND zb.type = 'BinaryExpression' AND zb.operator IN ['===', '!==', '==', '!='] AND zs.key IN ['left', 'right'] }
-                   OR EXISTS { MATCH (f)-[:SON*1..30]->(zm)-[:SON {key: 'property'}]->(zp), (zc)-[:SON {key: 'arguments'}]->(zm)
-                  WHERE zm.type = 'MemberExpression' AND zp.name = 'origin' AND zc.type IN ['CallExpression', 'NewExpression'] }) RETURN f.id AS id
+                  MATCH (f) WHERE f.id IN $handler AND f.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT (EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zb)-[zs:SON]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name IN ['origin', 'source'] AND zb.type = 'BinaryExpression' AND zb.operator IN ['===', '!==', '==', '!='] AND zs.key IN ['left', 'right']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset }
+                   OR EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zc)-[:SON {key: 'arguments'}]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name = 'origin' AND zc.type IN ['CallExpression', 'NewExpression']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset }) RETURN f.id AS id
               - |-
                   MATCH (h:Identifier)-[:REFERS_TO]->(d:Identifier)<-[:SON {key: 'id'}]-(x)
                   WHERE h.id IN $handler
                   OPTIONAL MATCH (x)-[:SON {key: 'init'}]->(i)
                   WITH CASE WHEN x.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] THEN x.id ELSE i.id END AS fid, CASE WHEN x.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] THEN x.type ELSE i.type END AS ft
                   WHERE ft IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration']
-                  MATCH (f) WHERE f.id = fid AND NOT (EXISTS { MATCH (f)-[:SON*1..30]->(zm)-[:SON {key: 'property'}]->(zp), (zb)-[zs:SON]->(zm)
-                  WHERE zm.type = 'MemberExpression' AND zp.name IN ['origin', 'source'] AND zb.type = 'BinaryExpression' AND zb.operator IN ['===', '!==', '==', '!='] AND zs.key IN ['left', 'right'] }
-                   OR EXISTS { MATCH (f)-[:SON*1..30]->(zm)-[:SON {key: 'property'}]->(zp), (zc)-[:SON {key: 'arguments'}]->(zm)
-                  WHERE zm.type = 'MemberExpression' AND zp.name = 'origin' AND zc.type IN ['CallExpression', 'NewExpression'] })
+                  MATCH (f) WHERE f.id = fid AND NOT (EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zb)-[zs:SON]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name IN ['origin', 'source'] AND zb.type = 'BinaryExpression' AND zb.operator IN ['===', '!==', '==', '!='] AND zs.key IN ['left', 'right']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset }
+                   OR EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zc)-[:SON {key: 'arguments'}]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name = 'origin' AND zc.type IN ['CallExpression', 'NewExpression']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset })
                   RETURN fid AS id
     - name: message_data
       message: "message event data read"
@@ -122,55 +128,55 @@ steps:
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (a)-[:SON {key: 'right'}]->(n)
-                  WHERE l.name = 'location' AND NOT EXISTS { MATCH (l)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zp)-[:SON {key: 'right'}]->(zl)
-                  WHERE zv.operator = '+' AND zp.operator = '+' AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' })
+                  WHERE l.name = 'location' AND NOT EXISTS { MATCH (l)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
+                   OR EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = n.file AND zp.startOffset = n.startOffset AND zp.id <> n.id }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zw.idx = 0 AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = zv.file AND zp.startOffset = zv.startOffset AND zp.id <> zv.id })
                   RETURN n.id AS id, 'location=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(:MemberExpression)-[:SON {key: 'property'}]->(q:Identifier), (a)-[:SON {key: 'right'}]->(n)
-                  WHERE q.name IN ['location', 'href'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zp)-[:SON {key: 'right'}]->(zl)
-                  WHERE zv.operator = '+' AND zp.operator = '+' AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' })
+                  WHERE q.name IN ['location', 'href'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
+                   OR EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = n.file AND zp.startOffset = n.startOffset AND zp.id <> n.id }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zw.idx = 0 AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = zv.file AND zp.startOffset = zv.startOffset AND zp.id <> zv.id })
                   RETURN n.id AS id, q.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o)
-                  WHERE a.idx = 0 AND ((p.name IN ['assign', 'replace'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' })) OR (p.name = 'open' AND o.name = 'window')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zp)-[:SON {key: 'right'}]->(zl)
-                  WHERE zv.operator = '+' AND zp.operator = '+' AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' })
+                  WHERE a.idx = 0 AND ((p.name IN ['assign', 'replace'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' })) OR (p.name = 'open' AND o.name = 'window')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
+                   OR EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = n.file AND zp.startOffset = n.startOffset AND zp.id <> n.id }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zw.idx = 0 AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = zv.file AND zp.startOffset = zv.startOffset AND zp.id <> zv.id })
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(n)
-                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND k.value IN ['href', 'src', 'action', 'formaction', 'srcdoc'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zp)-[:SON {key: 'right'}]->(zl)
-                  WHERE zv.operator = '+' AND zp.operator = '+' AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' })
+                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND k.value IN ['href', 'src', 'action', 'formaction', 'srcdoc'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
+                   OR EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = n.file AND zp.startOffset = n.startOffset AND zp.id <> n.id }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zw.idx = 0 AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = zv.file AND zp.startOffset = zv.startOffset AND zp.id <> zv.id })
                   RETURN n.id AS id, 'setAttribute' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k:TemplateLiteral)-[:SON {key: 'quasis'}]->(kq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(n)
-                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND kq.value IN ['href', 'src', 'action', 'formaction', 'srcdoc'] AND k.props CONTAINS '"expressions":[]' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zp)-[:SON {key: 'right'}]->(zl)
-                  WHERE zv.operator = '+' AND zp.operator = '+' AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' })
+                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND kq.value IN ['href', 'src', 'action', 'formaction', 'srcdoc'] AND k.props CONTAINS '"expressions":[]' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
+                   OR EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = n.file AND zp.startOffset = n.startOffset AND zp.id <> n.id }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zw.idx = 0 AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = zv.file AND zp.startOffset = zv.startOffset AND zp.id <> zv.id })
                   RETURN n.id AS id, 'setAttribute' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a0:SON {key: 'arguments'}]->(k), (c)-[a1:SON {key: 'arguments'}]->(n)
-                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND NOT k.type IN ['StringLiteral', 'TemplateLiteral'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zp)-[:SON {key: 'right'}]->(zl)
-                  WHERE zv.operator = '+' AND zp.operator = '+' AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' })
+                  WHERE p.name = 'setAttribute' AND a0.idx = 0 AND a1.idx = 1 AND NOT k.type IN ['StringLiteral', 'TemplateLiteral'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND NOT ((EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(/[^/\x5c]|[?#]|https?://[^/]+/).*' })
+                   OR EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = n.file AND zp.startOffset = n.startOffset AND zp.id <> n.id }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zp)-[:SON {key: 'right'}]->(zl) WHERE zw.idx = 0 AND zl.type = 'StringLiteral' AND zl.value STARTS WITH '/#' AND zp.operator = '+' AND zp.file = zv.file AND zp.startOffset = zv.startOffset AND zp.id <> zv.id })
                   RETURN n.id AS id, 'setAttribute:dynamic' AS kind, n.file AS file, n.line AS line, n.col AS col

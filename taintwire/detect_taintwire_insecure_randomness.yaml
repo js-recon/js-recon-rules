@@ -41,18 +41,18 @@ steps:
           query:
               - |-
                   MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (l)-[:SON {key: 'object'}]->(o:Identifier), (a)-[:SON {key: 'right'}]->(n)
-                  WHERE p.name = 'cookie' AND o.name = 'document' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND (EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
-                   OR EXISTS { MATCH (n)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' })
+                  WHERE p.name = 'cookie' AND o.name = 'document' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND (EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' })
                   RETURN n.id AS id, 'cookie' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (c)-[a0:SON {key: 'arguments'}]->(k), (cm)-[:SON {key: 'object'}]->(o)
                   WHERE p.name = 'setItem' AND a.idx = 1 AND a0.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral'] AND (o.name IN ['localStorage', 'sessionStorage'] OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name IN ['localStorage', 'sessionStorage'] })
-                    AND ((coalesce(k.name, k.value) =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*') OR (EXISTS { MATCH (k)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[:SON*1..12 (zr, zx | WHERE zr.key = 'left' AND zx.operator = '+')]->(zl)
-                  WHERE zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
-                   OR EXISTS { MATCH (k)-[:SON*0..1 (zw, _ | WHERE zw.key = 'arguments' AND zw.idx = 0)]->(zv)-[zq:SON {key: 'quasis'}]->(ze)
-                  WHERE zv.type = 'TemplateLiteral' AND zq.idx = 0 AND ze.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }))
+                    AND ((coalesce(k.name, k.value) =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*') OR (EXISTS { MATCH (k)-[:SON {key: 'left'}]->(zx), (zl) WHERE k.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = k.file AND zl.startOffset = k.startOffset AND zl.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
+                   OR EXISTS { MATCH (k)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
+                   OR EXISTS { MATCH (k)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }
+                   OR EXISTS { MATCH (k)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '(?i).*(token|sess|sid|nonce|csrf|xsrf|auth|secret|otp|state|key|pass|salt|verifier).*' }))
                   RETURN n.id AS id, 'setItem' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (c)-[a0:SON {key: 'arguments'}]->(k)
