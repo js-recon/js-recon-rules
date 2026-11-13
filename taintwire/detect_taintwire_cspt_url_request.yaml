@@ -3,10 +3,11 @@ name: "Client-side path traversal: URL value reaches a request URL (taintwire)"
 author: shriyanss
 js_recon_version: ">=2.1.0-alpha.2"
 description: >-
-    Taint flow from a URL read (location.hash/search/href,
-    document.URL/documentURI/referrer/baseURI) into the URL of a request: fetch, $fetch, axios
-    and axios.get/post/..., window.fetch, XMLHttpRequest.open, new WebSocket or new
-    EventSource. Review whether the value can change the request path.
+    Taint flow from location.hash/search, document.URL/documentURI/referrer/baseURI or
+    window.name (location.href is not a source here: polyfills and libraries routinely request
+    the current URL) into the URL of a request: fetch, $fetch, axios and axios.get/post/...,
+    window.fetch, XMLHttpRequest.open, new WebSocket or new EventSource. Review whether the
+    value can change the request path.
 severity: medium
 type: taintwire
 tech:
@@ -15,7 +16,7 @@ tech:
     - react
     - svelte
     - angular
-prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b'
+prefilter: '\blocation\b|\bdocument\s*\.\s*(?:URL|documentURI|referrer|baseURI)\b|\bwindow\s*\.\s*name\b'
 
 steps:
     - name: url_source
@@ -24,8 +25,12 @@ steps:
           query:
               - |-
                   MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o)
-                  WHERE (p.name IN ['hash', 'search', 'href'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
+                  WHERE (p.name IN ['hash', 'search'] AND (o.name = 'location' OR EXISTS { MATCH (o)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' }))
                      OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
+                  RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o:Identifier)
+                  WHERE o.name = 'window' AND p.name = 'name'
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
     - name: request_sink
       message: "URL-derived value reaches a request URL"

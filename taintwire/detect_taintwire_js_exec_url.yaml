@@ -41,6 +41,9 @@ steps:
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE ((f.name IN ['eval', 'setTimeout', 'setInterval'] AND a.idx = 0) OR f.name = 'Function') AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                    AND NOT (f.name IN ['setTimeout', 'setInterval'] AND (n.type = 'CallExpression'
+                   OR EXISTS { MATCH (n)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx) WHERE zx.type = 'FunctionDeclaration' }
+                   OR EXISTS { MATCH (n)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zi) WHERE zi.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] }))
                   RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
@@ -49,4 +52,7 @@ steps:
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE p.name IN ['eval', 'setTimeout', 'setInterval'] AND a.idx = 0 AND NOT n.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral']
+                    AND NOT (p.name IN ['setTimeout', 'setInterval'] AND (n.type = 'CallExpression'
+                   OR EXISTS { MATCH (n)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx) WHERE zx.type = 'FunctionDeclaration' }
+                   OR EXISTS { MATCH (n)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zi) WHERE zi.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] }))
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

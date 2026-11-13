@@ -6,8 +6,9 @@ description: >-
     Taint flow from a URL read (location.hash/search/href,
     document.URL/documentURI/referrer/baseURI) or window.name into a regular expression
     pattern: RegExp()/new RegExp(), or String.prototype.match/matchAll/search (which compile a
-    string argument as a RegExp). An attacker-chosen pattern can hang the page (ReDoS) or
-    change what a filter matches.
+    string argument as a RegExp; same-named methods that take more than one argument or belong
+    to this or a router/matcher object are left out). An attacker-chosen pattern can hang the
+    page (ReDoS) or change what a filter matches.
 severity: low
 type: taintwire
 tech:
@@ -48,6 +49,9 @@ steps:
                   WHERE f.name IN ['RegExp'] AND a.idx = 0 AND NOT EXISTS { MATCH (f)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
                   RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
-                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(o)
                   WHERE p.name IN ['match', 'matchAll', 'search'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT EXISTS { MATCH (c)-[za:SON {key: 'arguments'}]->() WHERE za.idx >= 1 }
+                    AND o.type <> 'ThisExpression' AND NOT lower(coalesce(o.name, '')) =~ '.*(router|matcher).*'
+                    AND NOT EXISTS { MATCH (o)-[:SON {key: 'property'}]->(zq) WHERE lower(zq.name) =~ '.*(router|matcher).*' }
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

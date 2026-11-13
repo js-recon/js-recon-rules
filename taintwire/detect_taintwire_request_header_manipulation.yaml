@@ -39,24 +39,35 @@ steps:
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE p.name IN ['setRequestHeader'] AND a.idx IN [0, 1] AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT EXISTS { MATCH (c)-[zk:SON {key: 'arguments'}]->(zn) WHERE zk.idx = 0 AND (lower(coalesce(zn.name, zn.value)) IN ['accept-charset', 'accept-encoding', 'access-control-request-headers', 'access-control-request-method', 'connection', 'content-length', 'cookie', 'cookie2', 'date', 'dnt', 'expect', 'host', 'keep-alive', 'origin', 'referer', 'set-cookie', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'via']
+                   OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'sec-' OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'proxy-') }
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (hp:ObjectProperty)-[:SON {key: 'key'}]->(hk:Identifier), (hp)-[:SON {key: 'value'}]->(:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[s:SON]->(n)
                   WHERE hk.name = 'headers' AND (s.key = 'value' OR (s.key = 'key' AND op.props CONTAINS '"computed":true')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT EXISTS { MATCH (op)-[:SON {key: 'key'}]->(zn) WHERE (lower(coalesce(zn.name, zn.value)) IN ['accept-charset', 'accept-encoding', 'access-control-request-headers', 'access-control-request-method', 'connection', 'content-length', 'cookie', 'cookie2', 'date', 'dnt', 'expect', 'host', 'keep-alive', 'origin', 'referer', 'set-cookie', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'via']
+                   OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'sec-' OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'proxy-') }
                   RETURN n.id AS id, 'headers:' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (oe:ObjectExpression)-[:FLOWS_TO* ACYCLIC 1..4]->(hv)<-[:SON {key: 'value'}]-(hp:ObjectProperty)-[:SON {key: 'key'}]->(hk:Identifier), (oe)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[s:SON]->(n)
                   WHERE hk.name = 'headers' AND (s.key = 'value' OR (s.key = 'key' AND op.props CONTAINS '"computed":true')) AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT EXISTS { MATCH (op)-[:SON {key: 'key'}]->(zn) WHERE (lower(coalesce(zn.name, zn.value)) IN ['accept-charset', 'accept-encoding', 'access-control-request-headers', 'access-control-request-method', 'connection', 'content-length', 'cookie', 'cookie2', 'date', 'dnt', 'expect', 'host', 'keep-alive', 'origin', 'referer', 'set-cookie', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'via']
+                   OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'sec-' OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'proxy-') }
                   RETURN n.id AS id, 'headers:' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(:ObjectExpression)-[:SON {key: 'properties'}]->(op:ObjectProperty)-[:SON {key: 'value'}]->(n)
                   WHERE f.name = 'Headers' AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT EXISTS { MATCH (op)-[:SON {key: 'key'}]->(zn) WHERE (lower(coalesce(zn.name, zn.value)) IN ['accept-charset', 'accept-encoding', 'access-control-request-headers', 'access-control-request-method', 'connection', 'content-length', 'cookie', 'cookie2', 'date', 'dnt', 'expect', 'host', 'keep-alive', 'origin', 'referer', 'set-cookie', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'via']
+                   OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'sec-' OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'proxy-') }
                   RETURN n.id AS id, 'new Headers' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n), (l)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(h:Identifier)
-                  WHERE h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  WHERE h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral'] AND NOT (lower(coalesce(p.name, p.value)) IN ['accept-charset', 'accept-encoding', 'access-control-request-headers', 'access-control-request-method', 'connection', 'content-length', 'cookie', 'cookie2', 'date', 'dnt', 'expect', 'host', 'keep-alive', 'origin', 'referer', 'set-cookie', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'via']
+                   OR lower(coalesce(p.name, p.value)) STARTS WITH 'sec-' OR lower(coalesce(p.name, p.value)) STARTS WITH 'proxy-')
                   RETURN n.id AS id, p.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n), (cm)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(h:Identifier)
                   WHERE p.name IN ['set', 'append'] AND a.idx IN [0, 1] AND h.name = 'headers' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT EXISTS { MATCH (c)-[zk:SON {key: 'arguments'}]->(zn) WHERE zk.idx = 0 AND (lower(coalesce(zn.name, zn.value)) IN ['accept-charset', 'accept-encoding', 'access-control-request-headers', 'access-control-request-method', 'connection', 'content-length', 'cookie', 'cookie2', 'date', 'dnt', 'expect', 'host', 'keep-alive', 'origin', 'referer', 'set-cookie', 'te', 'trailer', 'transfer-encoding', 'upgrade', 'via']
+                   OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'sec-' OR lower(coalesce(zn.name, zn.value)) STARTS WITH 'proxy-') }
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col

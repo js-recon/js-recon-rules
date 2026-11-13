@@ -4,10 +4,12 @@ author: shriyanss
 js_recon_version: ">=2.1.0-alpha.2"
 description: >-
     Taint flow from a URL read (location.hash/search/href,
-    document.URL/documentURI/referrer/baseURI) or window.name into element.style.<property>,
-    element.style, CSSStyleDeclaration.setProperty(), CSSStyleSheet.insertRule() or
-    replaceSync(). Attacker CSS can exfiltrate attribute values with selectors and url(), or
-    overlay the UI. style.cssText is reported by detect_taintwire_dom_xss_url.
+    document.URL/documentURI/referrer/baseURI) or window.name into element.style.<property> (a
+    value ending in a + "px"-style unit is left out: one property setter can't break out of
+    that property), element.style, CSSStyleDeclaration.setProperty(),
+    CSSStyleSheet.insertRule() or replaceSync(). Attacker CSS can exfiltrate attribute values
+    with selectors and url(), or overlay the UI. style.cssText is reported by
+    detect_taintwire_dom_xss_url.
 severity: low
 type: taintwire
 tech:
@@ -42,6 +44,7 @@ steps:
               - |-
                   MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n), (l)-[:SON {key: 'object'}]->(:MemberExpression)-[:SON {key: 'property'}]->(st:Identifier)
                   WHERE st.name = 'style' AND p.name <> 'cssText' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT (n.operator = '+' AND EXISTS { MATCH (n)-[:SON {key: 'right'}]->(zu) WHERE zu.type = 'StringLiteral' AND zu.value IN ['px', 'em', 'rem', '%', 'vh', 'vw', 'vmin', 'vmax', 'deg', 's', 'ms', 'fr', 'ch', 'ex', 'pt'] })
                   RETURN n.id AS id, p.name + '=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (asg)-[:SON {key: 'right'}]->(n)
