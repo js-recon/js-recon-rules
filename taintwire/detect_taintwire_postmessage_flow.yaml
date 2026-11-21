@@ -30,18 +30,18 @@ steps:
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(ae:Identifier),
                         (c)-[a0:SON {key: 'arguments'}]->(t:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(h), (cm)-[:SON {key: 'object'}]->(o)
                   WHERE ae.name = 'addEventListener' AND a0.idx = 0 AND a1.idx = 1 AND t.value = 'message' AND NOT EXISTS { MATCH (o)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zn)-[:SON {key: 'callee'}]->(zf)
-                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker'] }
+                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker', 'WebSocket', 'EventSource', 'BroadcastChannel'] }
                   RETURN h.id AS id
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(ae:Identifier),
                         (c)-[a0:SON {key: 'arguments'}]->(t:TemplateLiteral)-[:SON {key: 'quasis'}]->(tq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(h), (cm)-[:SON {key: 'object'}]->(o)
                   WHERE ae.name = 'addEventListener' AND a0.idx = 0 AND a1.idx = 1 AND tq.value = 'message' AND t.props CONTAINS '"expressions":[]' AND NOT EXISTS { MATCH (o)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zn)-[:SON {key: 'callee'}]->(zf)
-                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker'] }
+                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker', 'WebSocket', 'EventSource', 'BroadcastChannel'] }
                   RETURN h.id AS id
               - |-
                   MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(om:Identifier), (a)-[:SON {key: 'right'}]->(h), (l)-[:SON {key: 'object'}]->(o)
                   WHERE om.name = 'onmessage' AND NOT EXISTS { MATCH (o)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zn)-[:SON {key: 'callee'}]->(zf)
-                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker'] }
+                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker', 'WebSocket', 'EventSource', 'BroadcastChannel'] }
                   RETURN h.id AS id
     - name: listener
       message: "message listener function resolved"
