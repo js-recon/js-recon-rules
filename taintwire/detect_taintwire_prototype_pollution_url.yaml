@@ -5,10 +5,10 @@ js_recon_version: ">=2.1.0-alpha.2"
 description: >-
     Taint flow from a URL read (location.hash/search/href,
     document.URL/documentURI/referrer/baseURI) or window.name into the key of a nested
-    computed assignment (obj[key][k] = v, where key = '__proto__' writes Object.prototype) or
-    into the source of a deep merge: lodash
-    merge/mergeWith/defaultsDeep/setWith/zipObjectDeep, deepmerge/deepExtend, or jQuery
-    $.extend(true, ...). Polluted prototypes become gadgets for XSS or logic bypasses.
+    computed assignment (obj[key][k] = v, or a cursor walk cur = cur[key] = v as in jQuery
+    deparam, where key = '__proto__' writes Object.prototype) or into the source of a deep
+    merge: lodash merge/mergeWith/defaultsDeep/setWith/zipObjectDeep, deepmerge/deepExtend, or
+    jQuery $.extend(true, ...). Polluted prototypes become gadgets for XSS or logic bypasses.
 severity: medium
 type: taintwire
 tech:
@@ -48,6 +48,14 @@ steps:
                   MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(m2:MemberExpression)-[:SON {key: 'property'}]->(n)
                   WHERE m1.props CONTAINS '"computed":true' AND m2.props CONTAINS '"computed":true' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
                   RETURN n.id AS id, 'obj[key][k]=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (w:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (w)-[:SON {key: 'right'}]->(asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(o:Identifier), (m1)-[:SON {key: 'property'}]->(n)
+                  WHERE m1.props CONTAINS '"computed":true' AND o.name = l.name AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'cur=cur[key]=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(o:Identifier), (m1)-[:SON {key: 'property'}]->(n), (w:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (w)-[:SON {key: 'right'}]->(r:MemberExpression)-[:SON {key: 'object'}]->(ro:Identifier)
+                  WHERE m1.props CONTAINS '"computed":true' AND r.props CONTAINS '"computed":true' AND l.name = o.name AND ro.name = o.name AND w.file = asg.file AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'cur=cur[k];cur[key]=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE p.name IN ['merge', 'mergeWith', 'defaultsDeep', 'setWith', 'deepmerge', 'deepMerge', 'deepExtend'] AND a.idx >= 1 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']

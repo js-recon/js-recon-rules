@@ -215,6 +215,14 @@ steps:
                   WHERE m1.props CONTAINS '"computed":true' AND m2.props CONTAINS '"computed":true' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
                   RETURN n.id AS id, 'obj[key][k]=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
+                  MATCH (w:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (w)-[:SON {key: 'right'}]->(asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(o:Identifier), (m1)-[:SON {key: 'property'}]->(n)
+                  WHERE m1.props CONTAINS '"computed":true' AND o.name = l.name AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'cur=cur[key]=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(o:Identifier), (m1)-[:SON {key: 'property'}]->(n), (w:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (w)-[:SON {key: 'right'}]->(r:MemberExpression)-[:SON {key: 'object'}]->(ro:Identifier)
+                  WHERE m1.props CONTAINS '"computed":true' AND r.props CONTAINS '"computed":true' AND l.name = o.name AND ro.name = o.name AND w.file = asg.file AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'cur=cur[k];cur[key]=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE p.name IN ['merge', 'mergeWith', 'defaultsDeep', 'setWith', 'deepmerge', 'deepMerge', 'deepExtend'] AND a.idx >= 1 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
