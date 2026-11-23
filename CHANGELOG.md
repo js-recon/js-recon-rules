@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 2.0.1 - 2026-11-23
+
+### Fixed
+
+- Fewer false positives in 13 taintwire rules (ported from taintwire-queries):
+    - `detect_taintwire_open_redirect_url` and the navigation sinks skip values anchored to the page's origin (`"/path?" + v`, `"#" + v`, `"https://host/" + v`, `base + "/#" + path`).
+    - `detect_taintwire_postmessage_flow` and `detect_taintwire_postmessage_extended_flow` skip listeners with an exact `e.origin`/`e.source` check, Worker message listeners, and WebSocket, EventSource and BroadcastChannel message listeners.
+    - `detect_taintwire_js_exec_url` and the timer sinks: `setTimeout`/`setInterval` given a function-valued call or name is not code execution.
+    - `detect_taintwire_dom_xss_framework_sinks`: `$("#id-" + v)` is a selector; `DOMParser` is no longer a sink.
+    - `detect_taintwire_regex_injection_url` only matches `String.prototype.match`/`matchAll`/`search` shapes.
+    - `detect_taintwire_request_header_manipulation` skips forbidden header names.
+    - `detect_taintwire_css_injection_url` skips `+ "px"`-style unit values.
+    - `detect_taintwire_insecure_randomness` only reports secret-named cookies, storage keys and headers.
+    - `detect_taintwire_dom_clobbering_gadget`: `window.X || window.Y` is library detection.
+    - `detect_taintwire_cspt_url_request`: `location.href` is not a source. The CSPT rules also take `window.name` as a source.
+- `detect_taintwire_prototype_pollution_url` and `detect_taintwire_postmessage_extended_flow` find the cursor-walk sink `cur = cur[key] = v`.
+- `new URL(location)` and `new URLSearchParams(location)` (bare `location`, `window.location` or `document.location`) are now URL sources in every rule that uses the shared URL read source. The redirect rules still leave href-equivalent sources out.
+
+### Performance
+
+- The new filters use offset joins instead of recursive walks.
+
 ## 2.0.0 - 2026-11-06
 
 ### Added
