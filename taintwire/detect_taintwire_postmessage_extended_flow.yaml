@@ -8,6 +8,8 @@ description: >-
     DOMParser, Angular bypassSecurityTrust*, script loading (Worker, import(), <script>
     src/text, serviceWorker.register), template compilers, request URLs, cookie or web storage
     writes, document.domain, or a prototype-polluting merge or nested computed assignment.
+    Listeners that compare event.origin/event.source exactly and Worker message listeners are
+    left out.
 severity: high
 type: taintwire
 tech:
@@ -24,31 +26,45 @@ steps:
       taintwire:
           query:
               - |-
-                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(:MemberExpression)-[:SON {key: 'property'}]->(ae:Identifier),
-                        (c)-[a0:SON {key: 'arguments'}]->(t:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(h)
-                  WHERE ae.name = 'addEventListener' AND a0.idx = 0 AND a1.idx = 1 AND t.value = 'message'
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(ae:Identifier),
+                        (c)-[a0:SON {key: 'arguments'}]->(t:StringLiteral), (c)-[a1:SON {key: 'arguments'}]->(h), (cm)-[:SON {key: 'object'}]->(o)
+                  WHERE ae.name = 'addEventListener' AND a0.idx = 0 AND a1.idx = 1 AND t.value = 'message' AND NOT EXISTS { MATCH (o)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zn)-[:SON {key: 'callee'}]->(zf)
+                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker', 'WebSocket', 'EventSource', 'BroadcastChannel'] }
                   RETURN h.id AS id
               - |-
-                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(:MemberExpression)-[:SON {key: 'property'}]->(ae:Identifier),
-                        (c)-[a0:SON {key: 'arguments'}]->(t:TemplateLiteral)-[:SON {key: 'quasis'}]->(tq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(h)
-                  WHERE ae.name = 'addEventListener' AND a0.idx = 0 AND a1.idx = 1 AND tq.value = 'message' AND t.props CONTAINS '"expressions":[]'
+                  MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(ae:Identifier),
+                        (c)-[a0:SON {key: 'arguments'}]->(t:TemplateLiteral)-[:SON {key: 'quasis'}]->(tq:TemplateElement), (c)-[a1:SON {key: 'arguments'}]->(h), (cm)-[:SON {key: 'object'}]->(o)
+                  WHERE ae.name = 'addEventListener' AND a0.idx = 0 AND a1.idx = 1 AND tq.value = 'message' AND t.props CONTAINS '"expressions":[]' AND NOT EXISTS { MATCH (o)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zn)-[:SON {key: 'callee'}]->(zf)
+                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker', 'WebSocket', 'EventSource', 'BroadcastChannel'] }
                   RETURN h.id AS id
               - |-
-                  MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(:MemberExpression)-[:SON {key: 'property'}]->(om:Identifier), (a)-[:SON {key: 'right'}]->(h)
-                  WHERE om.name = 'onmessage'
+                  MATCH (a:AssignmentExpression)-[:SON {key: 'left'}]->(l:MemberExpression)-[:SON {key: 'property'}]->(om:Identifier), (a)-[:SON {key: 'right'}]->(h), (l)-[:SON {key: 'object'}]->(o)
+                  WHERE om.name = 'onmessage' AND NOT EXISTS { MATCH (o)-[:REFERS_TO]->(zd)<-[:SON {key: 'id'}]-(zx)-[:SON {key: 'init'}]->(zn)-[:SON {key: 'callee'}]->(zf)
+                  WHERE zn.type = 'NewExpression' AND zf.name IN ['Worker', 'SharedWorker', 'WebSocket', 'EventSource', 'BroadcastChannel'] }
                   RETURN h.id AS id
     - name: listener
       message: "message listener function resolved"
       taintwire:
           query:
               - |-
-                  MATCH (f) WHERE f.id IN $handler AND f.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] RETURN f.id AS id
+                  MATCH (f) WHERE f.id IN $handler AND f.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] AND NOT (EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zb)-[zs:SON]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name IN ['origin', 'source'] AND zb.type = 'BinaryExpression' AND zb.operator IN ['===', '!==', '==', '!='] AND zs.key IN ['left', 'right']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset }
+                   OR EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zc)-[:SON {key: 'arguments'}]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name = 'origin' AND zc.type IN ['CallExpression', 'NewExpression']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset }) RETURN f.id AS id
               - |-
                   MATCH (h:Identifier)-[:REFERS_TO]->(d:Identifier)<-[:SON {key: 'id'}]-(x)
                   WHERE h.id IN $handler
                   OPTIONAL MATCH (x)-[:SON {key: 'init'}]->(i)
                   WITH CASE WHEN x.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] THEN x.id ELSE i.id END AS fid, CASE WHEN x.type IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration'] THEN x.type ELSE i.type END AS ft
                   WHERE ft IN ['FunctionExpression', 'ArrowFunctionExpression', 'FunctionDeclaration']
+                  MATCH (f) WHERE f.id = fid AND NOT (EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zb)-[zs:SON]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name IN ['origin', 'source'] AND zb.type = 'BinaryExpression' AND zb.operator IN ['===', '!==', '==', '!='] AND zs.key IN ['left', 'right']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset }
+                   OR EXISTS { MATCH (f)-[:SON {key: 'body'}]->(zy), (zm)-[:SON {key: 'property'}]->(zp), (zc)-[:SON {key: 'arguments'}]->(zm)
+                  WHERE zm.type = 'MemberExpression' AND zp.name = 'origin' AND zc.type IN ['CallExpression', 'NewExpression']
+                    AND zm.file = f.file AND zm.startOffset > f.startOffset AND zm.endOffset <= f.endOffset })
                   RETURN fid AS id
     - name: message_data
       message: "message event data read"
@@ -68,10 +84,14 @@ steps:
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(f:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE f.name IN ['$', 'jQuery'] AND a.idx = 0 AND NOT EXISTS { MATCH (f)-[:REFERS_TO]->() } AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                    AND NOT (EXISTS { MATCH (n)-[:SON {key: 'left'}]->(zx), (zl) WHERE n.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = n.file AND zl.startOffset = n.startOffset AND zl.value =~ '[[:space:]]*[^<[:space:]].*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[:SON {key: 'left'}]->(zx), (zl) WHERE zw.idx = 0 AND zv.operator = '+' AND zl.type = 'StringLiteral' AND zl.file = zv.file AND zl.startOffset = zv.startOffset AND zl.value =~ '[[:space:]]*[^<[:space:]].*' }
+                   OR EXISTS { MATCH (n)-[zq:SON {key: 'quasis'}]->(ze) WHERE zq.idx = 0 AND ze.value =~ '[[:space:]]*[^<[:space:]].*' }
+                   OR EXISTS { MATCH (n)-[zw:SON {key: 'arguments'}]->(zv)-[zq:SON {key: 'quasis'}]->(ze) WHERE zw.idx = 0 AND zq.idx = 0 AND ze.value =~ '[[:space:]]*[^<[:space:]].*' })
                   RETURN n.id AS id, f.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
-                  WHERE p.name IN ['wrap', 'wrapAll', 'wrapInner', 'parseHTML', 'parseFromString', 'parseHTMLUnsafe'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  WHERE p.name IN ['wrap', 'wrapAll', 'wrapInner', 'parseHTML'] AND a.idx = 0 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
@@ -194,6 +214,14 @@ steps:
                   MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(m2:MemberExpression)-[:SON {key: 'property'}]->(n)
                   WHERE m1.props CONTAINS '"computed":true' AND m2.props CONTAINS '"computed":true' AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
                   RETURN n.id AS id, 'obj[key][k]=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (w:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (w)-[:SON {key: 'right'}]->(asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(o:Identifier), (m1)-[:SON {key: 'property'}]->(n)
+                  WHERE m1.props CONTAINS '"computed":true' AND o.name = l.name AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'cur=cur[key]=' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
+                  MATCH (asg:AssignmentExpression)-[:SON {key: 'left'}]->(m1:MemberExpression)-[:SON {key: 'object'}]->(o:Identifier), (m1)-[:SON {key: 'property'}]->(n), (w:AssignmentExpression)-[:SON {key: 'left'}]->(l:Identifier), (w)-[:SON {key: 'right'}]->(r:MemberExpression)-[:SON {key: 'object'}]->(ro:Identifier)
+                  WHERE m1.props CONTAINS '"computed":true' AND r.props CONTAINS '"computed":true' AND l.name = o.name AND ro.name = o.name AND w.file = asg.file AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']
+                  RETURN n.id AS id, 'cur=cur[k];cur[key]=' AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
                   MATCH (c:CallExpression)-[:SON {key: 'callee'}]->(cm:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
                   WHERE p.name IN ['merge', 'mergeWith', 'defaultsDeep', 'setWith', 'deepmerge', 'deepMerge', 'deepExtend'] AND a.idx >= 1 AND NOT n.type IN ['StringLiteral', 'NumericLiteral', 'NullLiteral', 'BooleanLiteral', 'RegExpLiteral']

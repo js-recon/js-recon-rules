@@ -28,6 +28,10 @@ steps:
                      OR (p.name IN ['URL', 'documentURI', 'referrer', 'baseURI'] AND o.name = 'document')
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
               - |-
+                  MATCH (c:NewExpression)-[:SON {key: 'callee'}]->(k:Identifier), (c)-[a:SON {key: 'arguments'}]->(n)
+                  WHERE k.name IN ['URL', 'URLSearchParams'] AND a.idx = 0 AND (n.name = 'location' OR EXISTS { MATCH (n)-[:SON {key: 'property'}]->(q:Identifier) WHERE q.name = 'location' })
+                  RETURN n.id AS id, 'location' AS kind, n.file AS file, n.line AS line, n.col AS col
+              - |-
                   MATCH (n:MemberExpression)-[:SON {key: 'property'}]->(p:Identifier), (n)-[:SON {key: 'object'}]->(o:Identifier)
                   WHERE o.name = 'window' AND p.name = 'name'
                   RETURN n.id AS id, p.name AS kind, n.file AS file, n.line AS line, n.col AS col
